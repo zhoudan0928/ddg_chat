@@ -138,24 +138,53 @@ const logger = (res, req) => {
 
 // 添加 URL 处理辅助函数
 function normalizeUrl(url) {
-  if (!url) return '/'
+  if (!url || url === '/') {
+    return process.env.VERCEL 
+      ? `https://${process.env.VERCEL_URL}/`
+      : `http://localhost:${config.PORT}/`
+  }
+  
   try {
+    // 如果是相对路径，添加基础URL
+    if (url.startsWith('/')) {
+      const baseUrl = process.env.VERCEL 
+        ? `https://${process.env.VERCEL_URL}`
+        : `http://localhost:${config.PORT}`
+      return baseUrl + url
+    }
+    
+    // 如果已经是完整URL，直接返回
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url
+    }
+    
+    // 其他情况，构建完整URL
     const baseUrl = process.env.VERCEL 
-      ? process.env.VERCEL_URL 
-      : `http://localhost:${config.PORT}`
+      ? `https://${process.env.VERCEL_URL}/`
+      : `http://localhost:${config.PORT}/`
     return new URL(url, baseUrl).toString()
   } catch (e) {
     console.error('URL normalization error:', e)
-    return '/'
+    return process.env.VERCEL 
+      ? `https://${process.env.VERCEL_URL}/`
+      : `http://localhost:${config.PORT}/`
   }
 }
 
 const router = Router({
-  base: '/',
+  base: process.env.VERCEL 
+    ? `https://${process.env.VERCEL_URL}`
+    : `http://localhost:${config.PORT}`,
   before: [
-    // 添加 URL 规范化中间件
+    // 添加请求处理中间件
     (request) => {
-      request.normalizedUrl = normalizeUrl(request.url)
+      // 确保请求对象有完整的URL
+      if (!request.url || request.url === '/') {
+        request.url = normalizeUrl('/')
+      } else if (!request.url.startsWith('http')) {
+        request.url = normalizeUrl(request.url)
+      }
+      request.normalizedUrl = request.url
     },
     withBenchmarking,
     preflight,
@@ -163,7 +192,8 @@ const router = Router({
   ],
   missing: (request) => {
     // 处理 favicon.ico 和其他静态资源请求
-    if (request.normalizedUrl.endsWith('.ico') || request.normalizedUrl.endsWith('.png')) {
+    const url = request.normalizedUrl || request.url
+    if (url.endsWith('.ico') || url.endsWith('.png')) {
       return new Response(null, { status: 404 })
     }
     return error(404, '404 Not Found. Please check whether the calling URL is correct.')
