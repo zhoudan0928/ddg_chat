@@ -1,5 +1,6 @@
 import { createServerAdapter } from '@whatwg-node/server'
-import { Router, json, error, cors } from 'itty-router'
+import { Router } from 'itty-router'
+import { json, error, cors } from 'itty-router-extras'
 import { createServer } from 'http'
 import dotenv from 'dotenv'
 
