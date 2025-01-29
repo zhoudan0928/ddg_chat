@@ -1,64 +1,9 @@
 import { createServerAdapter } from '@whatwg-node/server'
-import { Router } from 'itty-router'
+import { AutoRouter, json, error, cors } from 'itty-router'
 import { createServer } from 'http'
 import dotenv from 'dotenv'
 
 dotenv.config()
-
-// 自定义实现 json、error 和 cors 功能
-const json = (data) => new Response(JSON.stringify(data), {
-  headers: { 'Content-Type': 'application/json' }
-})
-
-const error = (status, message) => new Response(JSON.stringify({ error: message }), {
-  status,
-  headers: { 'Content-Type': 'application/json' }
-})
-
-const cors = (options = {}) => {
-  const {
-    origin = '*',
-    methods = '*',
-    headers = '*',
-    maxAge = 86400,
-    allowCredentials = true,
-  } = options
-
-  const preflight = request => {
-    if (request.method.toLowerCase() === 'options') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': origin,
-          'Access-Control-Allow-Methods': methods,
-          'Access-Control-Allow-Headers': headers,
-          'Access-Control-Max-Age': maxAge,
-          'Access-Control-Allow-Credentials': allowCredentials,
-        },
-      })
-    }
-  }
-
-  const corsify = response => {
-    response.headers.set('Access-Control-Allow-Origin', origin)
-    response.headers.set('Access-Control-Allow-Methods', methods)
-    response.headers.set('Access-Control-Allow-Headers', headers)
-    response.headers.set('Access-Control-Allow-Credentials', allowCredentials)
-    return response
-  }
-
-  return { preflight, corsify }
-}
-
-// 添加 User-Agent 生成器
-const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-]
-
-const PROXY_LIST = process.env.PROXY_LIST ? JSON.parse(process.env.PROXY_LIST) : []
 
 class Config {
   constructor() {
@@ -66,44 +11,24 @@ class Config {
     this.API_PREFIX = process.env.API_PREFIX || '/'
     this.API_KEY = process.env.API_KEY || ''
     this.MAX_RETRY_COUNT = process.env.MAX_RETRY_COUNT || 3
-    this.RETRY_DELAY = process.env.RETRY_DELAY || 10000
-    this.RETRY_DELAY_RANDOM = true
-    this.USE_PROXY = process.env.USE_PROXY === 'true'
-    this.ROTATE_USER_AGENT = process.env.ROTATE_USER_AGENT !== 'false'
-    
-    // 获取随机User-Agent
-    const randomUserAgent = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
-    
-    this.getHeaders = () => {
-      const baseHeaders = {
-        Accept: '*/*',
-        'Accept-Encoding': 'gzip, deflate, br, zstd',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        Origin: 'https://duckduckgo.com/',
-        Cookie: `dcm=${Math.floor(Math.random() * 5) + 1}`,
-        Dnt: '1',
-        Priority: 'u=1, i',
-        Referer: 'https://duckduckgo.com/',
-        'Sec-Ch-Ua': '"Chromium";v="120", "Not?A_Brand";v="99"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"Windows"',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin',
-        'User-Agent': this.ROTATE_USER_AGENT ? randomUserAgent() : USER_AGENTS[0],
-        'Cache-Control': 'no-cache',
-        Pragma: 'no-cache',
-      }
-      return baseHeaders
+    this.RETRY_DELAY = process.env.RETRY_DELAY || 5000
+    this.FAKE_HEADERS = process.env.FAKE_HEADERS || {
+      Accept: '*/*',
+      'Accept-Encoding': 'gzip, deflate, br, zstd',
+      'Accept-Language': 'zh-CN,zh;q=0.9',
+      Origin: 'https://duckduckgo.com/',
+      Cookie: 'dcm=3',
+      Dnt: '1',
+      Priority: 'u=1, i',
+      Referer: 'https://duckduckgo.com/',
+      'Sec-Ch-Ua': '"Chromium";v="130", "Microsoft Edge";v="130", "Not?A_Brand";v="99"',
+      'Sec-Ch-Ua-Mobile': '?0',
+      'Sec-Ch-Ua-Platform': '"Windows"',
+      'Sec-Fetch-Dest': 'empty',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Site': 'same-origin',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0',
     }
-    
-    // 初始化默认headers
-    this.FAKE_HEADERS = process.env.FAKE_HEADERS || this.getHeaders()
-  }
-
-  getProxy() {
-    if (!this.USE_PROXY || PROXY_LIST.length === 0) return null
-    return PROXY_LIST[Math.floor(Math.random() * PROXY_LIST.length)]
   }
 }
 
@@ -136,112 +61,267 @@ const logger = (res, req) => {
   console.log(req.method, res.status, req.url, Date.now() - req.start, 'ms')
 }
 
-// 添加 URL 处理辅助函数
-function normalizeUrl(url) {
-  if (!url || url === '/') {
-    return process.env.VERCEL 
-      ? `https://${process.env.VERCEL_URL}/`
-      : `http://localhost:${config.PORT}/`
-  }
-  
-  try {
-    // 如果是相对路径，添加基础URL
-    if (url.startsWith('/')) {
-      const baseUrl = process.env.VERCEL 
-        ? `https://${process.env.VERCEL_URL}`
-        : `http://localhost:${config.PORT}`
-      return baseUrl + url
-    }
-    
-    // 如果已经是完整URL，直接返回
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      return url
-    }
-    
-    // 其他情况，构建完整URL
-    const baseUrl = process.env.VERCEL 
-      ? `https://${process.env.VERCEL_URL}/`
-      : `http://localhost:${config.PORT}/`
-    return new URL(url, baseUrl).toString()
-  } catch (e) {
-    console.error('URL normalization error:', e)
-    return process.env.VERCEL 
-      ? `https://${process.env.VERCEL_URL}/`
-      : `http://localhost:${config.PORT}/`
-  }
-}
-
-const router = Router({
-  base: process.env.VERCEL 
-    ? `https://${process.env.VERCEL_URL}`
-    : `http://localhost:${config.PORT}`,
-  before: [
-    // 添加请求处理中间件
-    (request) => {
-      // 确保请求对象有完整的URL
-      if (!request.url || request.url === '/') {
-        request.url = normalizeUrl('/')
-      } else if (!request.url.startsWith('http')) {
-        request.url = normalizeUrl(request.url)
-      }
-      request.normalizedUrl = request.url
-    },
-    withBenchmarking,
-    preflight,
-    withAuth
-  ],
-  missing: (request) => {
-    // 处理 favicon.ico 和其他静态资源请求
-    const url = request.normalizedUrl || request.url
-    if (url.endsWith('.ico') || url.endsWith('.png')) {
-      return new Response(null, { status: 404 })
-    }
-    return error(404, '404 Not Found. Please check whether the calling URL is correct.')
-  },
+const router = AutoRouter({
+  before: [withBenchmarking, preflight, withAuth],
+  missing: () => error(404, '404 Not Found. Please check whether the calling URL is correct.'),
   finally: [corsify, logger],
 })
 
-// 添加基础路由
-router
-  .all('*', (request) => {
-    // 处理预检请求
-    if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': '*',
-          'Access-Control-Allow-Headers': '*',
-        },
-      })
-    }
+router.get('/', () => json({ message: 'API 服务运行中~' }))
+router.get('/ping', () => json({ message: 'pong' }))
+router.get(config.API_PREFIX + '/v1/models', () =>
+  json({
+    object: 'list',
+    data: [
+      { id: 'gpt-4o-mini', object: 'model', owned_by: 'ddg' },
+      { id: 'claude-3-haiku', object: 'model', owned_by: 'ddg' },
+      { id: 'llama-3.1-70b', object: 'model', owned_by: 'ddg' },
+      { id: 'mixtral-8x7b', object: 'model', owned_by: 'ddg' },
+    ],
   })
-  .get('/', () => json({ message: 'API 服务运行中~' }))
-  .get('/ping', () => json({ message: 'pong' }))
-  .get(config.API_PREFIX + '/v1/models', () =>
-    json({
-      object: 'list',
-      data: [
-        { id: 'gpt-4o-mini', object: 'model', owned_by: 'ddg' },
-        { id: 'claude-3-haiku', object: 'model', owned_by: 'ddg' },
-        { id: 'llama-3.1-70b', object: 'model', owned_by: 'ddg' },
-        { id: 'mixtral-8x7b', object: 'model', owned_by: 'ddg' },
-      ],
-    })
-  )
-  .post(config.API_PREFIX + '/v1/chat/completions', (req) => handleCompletion(req))
+)
 
-// 为 Vercel 环境导出路由处理函数
-export default process.env.VERCEL ? router.fetch : undefined
+router.post(config.API_PREFIX + '/v1/chat/completions', (req) => handleCompletion(req))
 
-// 本地开发环境启动服务器
-if (!process.env.VERCEL) {
-  (async () => {
-    //For Cloudflare Workers
-    if (typeof addEventListener === 'function') return
-    // For Nodejs
-    const ittyServer = createServerAdapter(router.fetch)
-    console.log(`Listening on http://localhost:${config.PORT}`)
-    const httpServer = createServer(ittyServer)
-    httpServer.listen(config.PORT)
-  })()
+async function handleCompletion(request) {
+  try {
+    const { model: inputModel, messages, stream: returnStream } = await request.json()
+    const model = convertModel(inputModel)
+    const content = messagesPrepare(messages)
+    return createCompletion(model, content, returnStream)
+  } catch (err) {
+    return error(500, err.message)
+  }
 }
+
+async function createCompletion(model, content, returnStream, retryCount = 0) {
+  const token = await requestToken()
+  try {
+    const response = await fetch(`https://duckduckgo.com/duckchat/v1/chat`, {
+      method: 'POST',
+      headers: {
+        ...config.FAKE_HEADERS,
+        Accept: 'text/event-stream',
+        'Content-Type': 'application/json',
+        'x-vqd-4': token,
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          {
+            role: 'user',
+            content: content,
+          },
+        ],
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Create Completion error! status: ${response.status}`)
+    }
+    return handlerStream(model, response.body, returnStream)
+  } catch (err) {
+    console.log(err)
+    if (retryCount < config.MAX_RETRY_COUNT) {
+      console.log('Retrying... count', ++retryCount)
+      await new Promise((resolve) => setTimeout(resolve, config.RETRY_DELAY))
+      return await createCompletion(model, content, returnStream, retryCount)
+    }
+    throw err
+  }
+}
+
+async function handlerStream(model, rb, returnStream) {
+  let bwzChunk = ''
+  let previousText = ''
+  const handChunkData = (chunk) => {
+    chunk = chunk.trim()
+    if (bwzChunk != '') {
+      chunk = bwzChunk + chunk
+      bwzChunk = ''
+    }
+
+    if (chunk.includes('[DONE]')) {
+      return chunk
+    }
+
+    if (chunk.slice(-2) !== '"}') {
+      bwzChunk = chunk
+    }
+    return chunk
+  }
+  const reader = rb.getReader()
+  const decoder = new TextDecoder()
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream({
+    async start(controller) {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) {
+          return controller.close()
+        }
+        const chunkStr = handChunkData(decoder.decode(value))
+        if (bwzChunk !== '') {
+          continue
+        }
+
+        chunkStr.split('\n').forEach((line) => {
+          if (line.length < 6) {
+            return
+          }
+          line = line.slice(6)
+          if (line !== '[DONE]') {
+            const originReq = JSON.parse(line)
+
+            if (originReq.action !== 'success') {
+              return controller.error(new Error('Error: originReq stream chunk is not success'))
+            }
+
+            if (originReq.message) {
+              previousText += originReq.message
+              if (returnStream) {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify(newChatCompletionChunkWithModel(originReq.message, originReq.model))}\n\n`)
+                )
+              }
+            }
+          } else {
+            if (returnStream) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(newStopChunkWithModel('stop', model))}\n\n`))
+            } else {
+              controller.enqueue(encoder.encode(JSON.stringify(newChatCompletionWithModel(previousText, model))))
+            }
+            return controller.close()
+          }
+        })
+        continue
+      }
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': returnStream ? 'text/event-stream' : 'application/json',
+    },
+  })
+}
+
+function messagesPrepare(messages) {
+  let content = ''
+  for (const message of messages) {
+    let role = message.role === 'system' ? 'user' : message.role
+
+    if (['user', 'assistant'].includes(role)) {
+      const contentStr = Array.isArray(message.content)
+        ? message.content
+            .filter((item) => item.text)
+            .map((item) => item.text)
+            .join('') || ''
+        : message.content
+      content += `${role}:${contentStr};\r\n`
+    }
+  }
+  return content
+}
+
+async function requestToken() {
+  try {
+    const response = await fetch(`https://duckduckgo.com/duckchat/v1/status`, {
+      method: 'GET',
+      headers: {
+        ...config.FAKE_HEADERS,
+        'x-vqd-accept': '1',
+      },
+    })
+    const token = response.headers.get('x-vqd-4')
+    return token
+  } catch (error) {
+    console.log("Request token error: ", err)
+  }
+}
+
+function convertModel(inputModel) {
+  let model
+  switch (inputModel.toLowerCase()) {
+    case 'claude-3-haiku':
+      model = 'claude-3-haiku-20240307'
+      break
+    case 'llama-3.1-70b':
+      model = 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo'
+      break
+    case 'mixtral-8x7b':
+      model = 'mistralai/Mixtral-8x7B-Instruct-v0.1'
+      break
+  }
+  return model || 'gpt-4o-mini'
+}
+
+function newChatCompletionChunkWithModel(text, model) {
+  return {
+    id: 'chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK',
+    object: 'chat.completion.chunk',
+    created: 0,
+    model,
+    choices: [
+      {
+        index: 0,
+        delta: {
+          content: text,
+        },
+        finish_reason: null,
+      },
+    ],
+  }
+}
+
+function newStopChunkWithModel(reason, model) {
+  return {
+    id: 'chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK',
+    object: 'chat.completion.chunk',
+    created: 0,
+    model,
+    choices: [
+      {
+        index: 0,
+        finish_reason: reason,
+      },
+    ],
+  }
+}
+
+function newChatCompletionWithModel(text, model) {
+  return {
+    id: 'chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK',
+    object: 'chat.completion',
+    created: 0,
+    model,
+    usage: {
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+    },
+    choices: [
+      {
+        message: {
+          content: text,
+          role: 'assistant',
+        },
+        index: 0,
+      },
+    ],
+  }
+}
+
+// Serverless Service
+
+(async () => {
+  //For Cloudflare Workers
+  if (typeof addEventListener === 'function') return
+  // For Nodejs
+  const ittyServer = createServerAdapter(router.fetch)
+  console.log(`Listening on http://localhost:${config.PORT}`)
+  const httpServer = createServer(ittyServer)
+  httpServer.listen(config.PORT)
+})()
+
+// export default router

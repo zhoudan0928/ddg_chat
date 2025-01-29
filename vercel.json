@@ -1,31 +1,13 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/index.js",
-      "use": "@vercel/node"
+  "functions": {
+    "api/**/*": {
+      "maxDuration": 60
     }
-  ],
+  },
   "routes": [
     {
-      "src": "/favicon.ico",
-      "dest": "/api/index.js"
-    },
-    {
-      "src": "/robots.txt",
-      "dest": "/api/index.js"
-    },
-    {
       "src": "/(.*)",
-      "dest": "/api/index.js",
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "X-Requested-With, Content-Type, Accept, Authorization"
-      }
+      "dest": "/api/index"
     }
-  ],
-  "env": {
-    "VERCEL": "true"
-  }
+  ]
 }
