@@ -1,5 +1,5 @@
 import { createServerAdapter } from '@whatwg-node/server'
-import { AutoRouter, json, error, cors } from 'itty-router'
+import { Router, json, error, cors } from 'itty-router'
 import { createServer } from 'http'
 import dotenv from 'dotenv'
 
@@ -92,7 +92,8 @@ const logger = (res, req) => {
   console.log(req.method, res.status, req.url, Date.now() - req.start, 'ms')
 }
 
-const router = AutoRouter({
+const router = Router({
+  base: '/',
   before: [withBenchmarking, preflight, withAuth],
   missing: () => error(404, '404 Not Found. Please check whether the calling URL is correct.'),
   finally: [corsify, logger],
