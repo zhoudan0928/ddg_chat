@@ -5,30 +5,61 @@ import dotenv from 'dotenv'
 
 dotenv.config()
 
+// 添加 User-Agent 生成器
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+]
+
+const PROXY_LIST = process.env.PROXY_LIST ? JSON.parse(process.env.PROXY_LIST) : []
+
 class Config {
   constructor() {
     this.PORT = process.env.PORT || 8787
     this.API_PREFIX = process.env.API_PREFIX || '/'
     this.API_KEY = process.env.API_KEY || ''
     this.MAX_RETRY_COUNT = process.env.MAX_RETRY_COUNT || 3
-    this.RETRY_DELAY = process.env.RETRY_DELAY || 5000
-    this.FAKE_HEADERS = process.env.FAKE_HEADERS || {
-      Accept: '*/*',
-      'Accept-Encoding': 'gzip, deflate, br, zstd',
-      'Accept-Language': 'zh-CN,zh;q=0.9',
-      Origin: 'https://duckduckgo.com/',
-      Cookie: 'dcm=3',
-      Dnt: '1',
-      Priority: 'u=1, i',
-      Referer: 'https://duckduckgo.com/',
-      'Sec-Ch-Ua': '"Chromium";v="130", "Microsoft Edge";v="130", "Not?A_Brand";v="99"',
-      'Sec-Ch-Ua-Mobile': '?0',
-      'Sec-Ch-Ua-Platform': '"Windows"',
-      'Sec-Fetch-Dest': 'empty',
-      'Sec-Fetch-Mode': 'cors',
-      'Sec-Fetch-Site': 'same-origin',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0',
+    this.RETRY_DELAY = process.env.RETRY_DELAY || 10000
+    this.RETRY_DELAY_RANDOM = true
+    this.USE_PROXY = process.env.USE_PROXY === 'true'
+    this.ROTATE_USER_AGENT = process.env.ROTATE_USER_AGENT !== 'false'
+    
+    // 获取随机User-Agent
+    const randomUserAgent = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
+    
+    this.getHeaders = () => {
+      const baseHeaders = {
+        Accept: '*/*',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        Origin: 'https://duckduckgo.com/',
+        Cookie: `dcm=${Math.floor(Math.random() * 5) + 1}`,
+        Dnt: '1',
+        Priority: 'u=1, i',
+        Referer: 'https://duckduckgo.com/',
+        'Sec-Ch-Ua': '"Chromium";v="120", "Not?A_Brand";v="99"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+        'User-Agent': this.ROTATE_USER_AGENT ? randomUserAgent() : USER_AGENTS[0],
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      }
+      return baseHeaders
     }
+    
+    // 初始化默认headers
+    this.FAKE_HEADERS = process.env.FAKE_HEADERS || this.getHeaders()
+  }
+
+  getProxy() {
+    if (!this.USE_PROXY || PROXY_LIST.length === 0) return null
+    return PROXY_LIST[Math.floor(Math.random() * PROXY_LIST.length)]
   }
 }
 
@@ -97,10 +128,11 @@ async function handleCompletion(request) {
 async function createCompletion(model, content, returnStream, retryCount = 0) {
   const token = await requestToken()
   try {
-    const response = await fetch(`https://duckduckgo.com/duckchat/v1/chat`, {
+    const currentProxy = config.getProxy()
+    const fetchOptions = {
       method: 'POST',
       headers: {
-        ...config.FAKE_HEADERS,
+        ...config.getHeaders(),
         Accept: 'text/event-stream',
         'Content-Type': 'application/json',
         'x-vqd-4': token,
@@ -114,7 +146,14 @@ async function createCompletion(model, content, returnStream, retryCount = 0) {
           },
         ],
       }),
-    })
+    }
+
+    // 如果配置了代理，添加代理设置
+    if (currentProxy) {
+      fetchOptions.agent = new (require('https-proxy-agent'))(currentProxy)
+    }
+
+    const response = await fetch(`https://duckduckgo.com/duckchat/v1/chat`, fetchOptions)
 
     if (!response.ok) {
       throw new Error(`Create Completion error! status: ${response.status}`)
@@ -124,7 +163,10 @@ async function createCompletion(model, content, returnStream, retryCount = 0) {
     console.log(err)
     if (retryCount < config.MAX_RETRY_COUNT) {
       console.log('Retrying... count', ++retryCount)
-      await new Promise((resolve) => setTimeout(resolve, config.RETRY_DELAY))
+      const delay = config.RETRY_DELAY_RANDOM 
+        ? config.RETRY_DELAY + Math.random() * 5000
+        : config.RETRY_DELAY
+      await new Promise((resolve) => setTimeout(resolve, delay))
       return await createCompletion(model, content, returnStream, retryCount)
     }
     throw err
@@ -226,17 +268,25 @@ function messagesPrepare(messages) {
 
 async function requestToken() {
   try {
-    const response = await fetch(`https://duckduckgo.com/duckchat/v1/status`, {
+    const currentProxy = config.getProxy()
+    const fetchOptions = {
       method: 'GET',
       headers: {
-        ...config.FAKE_HEADERS,
+        ...config.getHeaders(),
         'x-vqd-accept': '1',
       },
-    })
+    }
+
+    if (currentProxy) {
+      fetchOptions.agent = new (require('https-proxy-agent'))(currentProxy)
+    }
+
+    const response = await fetch(`https://duckduckgo.com/duckchat/v1/status`, fetchOptions)
     const token = response.headers.get('x-vqd-4')
     return token
-  } catch (error) {
+  } catch (err) {
     console.log("Request token error: ", err)
+    throw err
   }
 }
 

@@ -1,5 +1,5 @@
 {
-  "name": "ddg-chat",
+  "name": "ddg-chat-api",
   "version": "1.0.0",
   "type": "module",
   "private": true,
@@ -13,9 +13,10 @@
   },
   "author": "leafmoes",
   "dependencies": {
-    "@whatwg-node/server": "^0.9.49",
-    "dotenv": "^16.4.5",
-    "itty-router": "^5.0.18"
+    "@whatwg-node/server": "^0.9.32",
+    "dotenv": "^16.4.1",
+    "https-proxy-agent": "^7.0.2",
+    "itty-router": "^4.0.27"
   },
   "devDependencies": {
     "wrangler": "^3.60.3"
