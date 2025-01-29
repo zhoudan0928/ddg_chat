@@ -5,20 +5,19 @@
   "private": true,
   "scripts": {
     "deploy": "vercel",
-    "deploy:cf": "wrangler deploy",
-    "publish": "vercel --prod",
-    "publish:cf": "wrangler publish",
-    "dev": "wrangler dev",
+    "deploy:prod": "vercel --prod",
+    "dev": "vercel dev",
     "start": "node api/index.js"
   },
   "author": "leafmoes",
   "dependencies": {
+    "@vercel/node": "^3.0.17",
     "@whatwg-node/server": "^0.9.32",
     "dotenv": "^16.4.1",
     "https-proxy-agent": "^7.0.2",
     "itty-router": "^4.0.27"
   },
   "devDependencies": {
-    "wrangler": "^3.60.3"
+    "vercel": "^33.5.1"
   }
 }

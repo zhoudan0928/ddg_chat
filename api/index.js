@@ -5,6 +5,9 @@ import dotenv from 'dotenv'
 
 dotenv.config()
 
+// 为 Vercel 环境导出路由处理函数
+export default process.env.VERCEL ? router.fetch : undefined
+
 // 添加 User-Agent 生成器
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -148,9 +151,16 @@ async function createCompletion(model, content, returnStream, retryCount = 0) {
       }),
     }
 
-    // 如果配置了代理，添加代理设置
+    // 在 Vercel 环境中使用不同的代理实现
     if (currentProxy) {
-      fetchOptions.agent = new (require('https-proxy-agent'))(currentProxy)
+      if (process.env.VERCEL) {
+        // Vercel 环境使用 fetch 的 proxy 参数
+        fetchOptions.proxy = currentProxy
+      } else {
+        // 本地环境使用 https-proxy-agent
+        const HttpsProxyAgent = (await import('https-proxy-agent')).HttpsProxyAgent
+        fetchOptions.agent = new HttpsProxyAgent(currentProxy)
+      }
     }
 
     const response = await fetch(`https://duckduckgo.com/duckchat/v1/chat`, fetchOptions)
@@ -277,101 +287,16 @@ async function requestToken() {
       },
     }
 
+    // 在 Vercel 环境中使用不同的代理实现
     if (currentProxy) {
-      fetchOptions.agent = new (require('https-proxy-agent'))(currentProxy)
+      if (process.env.VERCEL) {
+        // Vercel 环境使用 fetch 的 proxy 参数
+        fetchOptions.proxy = currentProxy
+      } else {
+        // 本地环境使用 https-proxy-agent
+        const HttpsProxyAgent = (await import('https-proxy-agent')).HttpsProxyAgent
+        fetchOptions.agent = new HttpsProxyAgent(currentProxy)
+      }
     }
 
-    const response = await fetch(`https://duckduckgo.com/duckchat/v1/status`, fetchOptions)
-    const token = response.headers.get('x-vqd-4')
-    return token
-  } catch (err) {
-    console.log("Request token error: ", err)
-    throw err
-  }
-}
-
-function convertModel(inputModel) {
-  let model
-  switch (inputModel.toLowerCase()) {
-    case 'claude-3-haiku':
-      model = 'claude-3-haiku-20240307'
-      break
-    case 'llama-3.1-70b':
-      model = 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo'
-      break
-    case 'mixtral-8x7b':
-      model = 'mistralai/Mixtral-8x7B-Instruct-v0.1'
-      break
-  }
-  return model || 'gpt-4o-mini'
-}
-
-function newChatCompletionChunkWithModel(text, model) {
-  return {
-    id: 'chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK',
-    object: 'chat.completion.chunk',
-    created: 0,
-    model,
-    choices: [
-      {
-        index: 0,
-        delta: {
-          content: text,
-        },
-        finish_reason: null,
-      },
-    ],
-  }
-}
-
-function newStopChunkWithModel(reason, model) {
-  return {
-    id: 'chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK',
-    object: 'chat.completion.chunk',
-    created: 0,
-    model,
-    choices: [
-      {
-        index: 0,
-        finish_reason: reason,
-      },
-    ],
-  }
-}
-
-function newChatCompletionWithModel(text, model) {
-  return {
-    id: 'chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK',
-    object: 'chat.completion',
-    created: 0,
-    model,
-    usage: {
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      total_tokens: 0,
-    },
-    choices: [
-      {
-        message: {
-          content: text,
-          role: 'assistant',
-        },
-        index: 0,
-      },
-    ],
-  }
-}
-
-// Serverless Service
-
-(async () => {
-  //For Cloudflare Workers
-  if (typeof addEventListener === 'function') return
-  // For Nodejs
-  const ittyServer = createServerAdapter(router.fetch)
-  console.log(`Listening on http://localhost:${config.PORT}`)
-  const httpServer = createServer(ittyServer)
-  httpServer.listen(config.PORT)
-})()
-
-// export default router
+    const response = await fetch(`
