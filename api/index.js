@@ -1,10 +1,53 @@
 import { createServerAdapter } from '@whatwg-node/server'
 import { Router } from 'itty-router'
-import { json, error, cors } from 'itty-router-extras'
 import { createServer } from 'http'
 import dotenv from 'dotenv'
 
 dotenv.config()
+
+// 自定义实现 json、error 和 cors 功能
+const json = (data) => new Response(JSON.stringify(data), {
+  headers: { 'Content-Type': 'application/json' }
+})
+
+const error = (status, message) => new Response(JSON.stringify({ error: message }), {
+  status,
+  headers: { 'Content-Type': 'application/json' }
+})
+
+const cors = (options = {}) => {
+  const {
+    origin = '*',
+    methods = '*',
+    headers = '*',
+    maxAge = 86400,
+    allowCredentials = true,
+  } = options
+
+  const preflight = request => {
+    if (request.method.toLowerCase() === 'options') {
+      return new Response(null, {
+        headers: {
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Methods': methods,
+          'Access-Control-Allow-Headers': headers,
+          'Access-Control-Max-Age': maxAge,
+          'Access-Control-Allow-Credentials': allowCredentials,
+        },
+      })
+    }
+  }
+
+  const corsify = response => {
+    response.headers.set('Access-Control-Allow-Origin', origin)
+    response.headers.set('Access-Control-Allow-Methods', methods)
+    response.headers.set('Access-Control-Allow-Headers', headers)
+    response.headers.set('Access-Control-Allow-Credentials', allowCredentials)
+    return response
+  }
+
+  return { preflight, corsify }
+}
 
 // 添加 User-Agent 生成器
 const USER_AGENTS = [
